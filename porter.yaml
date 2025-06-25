@@ -1,0 +1,66 @@
+version: v2
+
+name: v10r
+
+# Build configuration - applies to all services
+build:
+  method: docker
+  context: .
+  dockerfile: ./Dockerfile
+
+# Shared environment variables for all services
+env:
+  # v10r configuration
+  V10R_CONFIG_FILE: /app/config/v10r-config.yaml
+  V10R_LOG_LEVEL: INFO
+  V10R_ENVIRONMENT: production
+  V10R_METRICS_ENABLED: "true"
+  V10R_HEALTH_CHECK_ENABLED: "true"
+  
+  # Database configuration (set these as secrets in Porter)
+  DATABASE_URL: "{{ secret.DATABASE_URL }}"
+  
+  # Redis configuration (set these as secrets in Porter)
+  REDIS_HOST: "{{ secret.REDIS_HOST }}"
+  REDIS_PORT: "{{ secret.REDIS_PORT }}"
+  REDIS_PASSWORD: "{{ secret.REDIS_PASSWORD }}"
+  
+  # Embedding API configuration (set these as secrets in Porter)
+  INFINITY_API_URL: "{{ secret.INFINITY_API_URL }}"
+  INFINITY_API_KEY: "{{ secret.INFINITY_API_KEY }}"
+  
+  # OpenAI API (optional fallback, set as secret in Porter)
+  OPENAI_API_KEY: "{{ secret.OPENAI_API_KEY }}"
+
+# Pre-deployment job for database setup
+predeploy:
+  run: |
+    v10r test-connection --config /app/config/v10r-config.yaml &&
+    v10r schema-reconcile --config /app/config/v10r-config.yaml
+
+# Services
+services:
+  - name: listener
+    type: web
+    run: v10r listen --config /app/config/v10r-config.yaml
+    port: 8080
+    instances: 1
+    cpuCores: 0.5
+    ramMegabytes: 1024
+    # Health check will use the built-in Docker HEALTHCHECK
+
+  - name: worker
+    type: worker
+    run: v10r worker --config /app/config/v10r-config.yaml
+    instances: 2
+    cpuCores: 1
+    ramMegabytes: 2048
+    env:
+      # Additional worker-specific environment variables
+      V10R_WORKER_MODE: "true"
+      V10R_WORKER_CONCURRENCY: "4"
+      V10R_BATCH_SIZE: "30"
+
+# Auto-rollback configuration
+autoRollback:
+  enabled: true 

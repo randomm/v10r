@@ -146,6 +146,12 @@ v10r-config.yml
 *~
 .claude/
 
+# Claude/AI files
+CLAUDE.md
+claude.md
+*.claude.md
+GENERIC_VECTORIZER_PLAN.md
+
 # OS
 .DS_Store
 .DS_Store?

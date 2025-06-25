@@ -1,0 +1,238 @@
+# v10r Configuration Example
+# This file shows all available configuration options with focus on Infinity deployments
+
+# Service configuration
+service_name: "v10r"
+debug: false
+dry_run: false
+
+# Database configurations (you can have multiple)
+databases:
+  - name: "primary"
+    connection:
+      host: "${POSTGRES_HOST}"
+      port: 5432
+      database: "${POSTGRES_DB}"
+      user: "${POSTGRES_USER}"
+      password: "${POSTGRES_PASSWORD}"
+      ssl_mode: "prefer"
+      connect_timeout: 30
+      command_timeout: 60
+
+    # Tables to vectorize
+    tables:
+      # Simple table - just content vectorization
+      - schema: "public"
+        table: "documents"
+        text_column: "content"
+        id_column: "id"
+        vector_column: "content_vector"
+        model_column: "content_embedding_model"
+        embedding_config: "example_infinity"
+        ensure_no_nulls: true
+
+      # Multiple columns per table example
+      - schema: "public"
+        table: "products"
+        text_column: "title"
+        vector_column: "title_vector"
+        model_column: "title_embedding_model"
+        embedding_config: "example_infinity"
+
+      - schema: "public"
+        table: "products"
+        text_column: "description"
+        vector_column: "description_vector"
+        model_column: "description_embedding_model"
+        embedding_config: "example_infinity"
+        preprocessing:
+          enabled: true
+          cleaned_text_column: "description_cleaned"
+          cleaning_config: "html_to_markdown"
+
+      # Job postings with multiple text fields
+      - schema: "public"
+        table: "job_postings"
+        text_column: "title"
+        vector_column: "title_vector"
+        model_column: "title_embedding_model"
+        embedding_config: "example_infinity"
+
+      - schema: "public"
+        table: "job_postings"
+        text_column: "description"
+        vector_column: "description_vector"
+        model_column: "description_embedding_model"
+        embedding_config: "example_infinity"
+        preprocessing:
+          enabled: true
+          cleaned_text_column: "description_cleaned"
+          cleaning_config: "html_to_markdown"
+
+      - schema: "public"
+        table: "job_postings"
+        text_column: "requirements"
+        vector_column: "requirements_vector"
+        model_column: "requirements_embedding_model"
+        embedding_config: "example_infinity"
+        preprocessing:
+          enabled: true
+          cleaned_text_column: "requirements_cleaned"
+          cleaning_config: "basic_cleanup"
+
+# Embedding provider configurations
+embeddings:
+  # Production Infinity deployment (BGE-M3 model)
+  example_infinity:
+    provider: "infinity"
+    endpoint: "https://embed.example.com"
+    model: "BAAI/bge-m3"
+    dimensions: 1024  # BGE-M3 model dimension
+    batch_size: 30    # Conservative batch size for stability
+    timeout: 60       # Longer timeout for BGE-M3 processing
+    max_retries: 3
+    retry_delay: 2.0
+
+  # Development/testing with local Infinity
+  local_infinity:
+    provider: "infinity"
+    endpoint: "http://localhost:8080"
+    model: "BAAI/bge-m3"
+    dimensions: 1024
+    batch_size: 20    # Smaller batches for local development
+    timeout: 30
+    max_retries: 2
+    retry_delay: 1.0
+
+  # Alternative multilingual model (if available)
+  infinity_potion:
+    provider: "infinity"
+    endpoint: "https://embed.example.com"
+    model: "minishlab/potion-multilingual-128M"
+    dimensions: 768
+    batch_size: 50    # Potion model is lighter
+    timeout: 30
+    max_retries: 3
+    retry_delay: 1.0
+
+  # OpenAI embedding models (for comparison or fallback)
+  openai_small:
+    provider: "openai"
+    api_key: "${OPENAI_API_KEY}"
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    batch_size: 100
+    timeout: 30
+    max_retries: 3
+    retry_delay: 1.0
+
+  openai_large:
+    provider: "openai"
+    api_key: "${OPENAI_API_KEY}"
+    model: "text-embedding-3-large"
+    dimensions: 3072
+    batch_size: 50
+    timeout: 60
+    max_retries: 3
+    retry_delay: 1.0
+
+  # Custom API (any OpenAI-compatible endpoint)
+  custom_api:
+    provider: "custom"
+    endpoint: "${CUSTOM_EMBEDDING_ENDPOINT}"
+    api_key: "${CUSTOM_API_KEY}"
+    model: "custom-model-name"
+    dimensions: 512
+    batch_size: 100
+
+# Message queue configuration
+queue:
+  type: "redis"  # or "rabbitmq"
+  connection:
+    host: "${REDIS_HOST}"
+    port: 6379
+    db: 0
+    # password: "${REDIS_PASSWORD}"  # if needed
+  name: "v10r_tasks"
+  max_retries: 3
+  retry_delay: 60
+
+# Worker configuration
+workers:
+  concurrency: 4
+  batch_timeout: 60
+  max_batch_size: 100
+  heartbeat_interval: 30
+
+# Schema management
+schema_management:
+  reconciliation: true
+  mode: "safe"  # safe, force, dry_run
+  check_interval: 300  # seconds
+  collision_strategy: "auto_warn"  # interactive, auto_warn, auto_silent, error
+  allow_drop_columns: false
+  require_backup: true
+
+# Text cleaning configurations
+cleaning_configs:
+  # HTML to clean markdown
+  html_to_markdown:
+    name: "html_to_markdown"
+    pipeline:
+      - type: "html_extraction"
+        method: "trafilatura"
+        options:
+          include_tables: true
+          include_links: false
+          include_images: false
+      - type: "markdown_conversion"
+        method: "markdownify"
+        options:
+          strip_tags: ["script", "style", "nav", "footer"]
+      - type: "text_normalization"
+        method: "ftfy"
+      - type: "whitespace_cleanup"
+        options:
+          preserve_paragraphs: true
+
+  # Basic text cleanup
+  basic_cleanup:
+    name: "basic_cleanup"
+    pipeline:
+      - type: "html_strip"
+        method: "beautifulsoup"
+      - type: "unicode_normalize"
+        method: "unidecode"
+      - type: "whitespace_cleanup"
+
+  # RAG-optimized preprocessing
+  rag_optimized:
+    name: "rag_optimized"
+    pipeline:
+      - type: "unstructured"
+        options:
+          preserve_tables: true
+          chunk_strategy: "by_title"
+      - type: "langchain_cleanup"
+        options:
+          remove_citations: true
+          fix_encoding: true
+      - type: "text_normalization"
+        method: "ftfy"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null  # or "/var/log/v10r.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# Monitoring and observability
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  health_check_port: 8080
+  prometheus_enabled: true
+  jaeger_enabled: false
+  jaeger_endpoint: null 

@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 16 with pgvector extension
+  test-postgres:
+    image: pgvector/pgvector:pg16  # Official pgvector image with PostgreSQL 16
+    container_name: v10r-test-postgres
+    environment:
+      POSTGRES_USER: v10r_test
+      POSTGRES_PASSWORD: test_password_123
+      POSTGRES_DB: v10r_test_db
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "15432:5432"  # Use different port to avoid conflicts
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-scripts:/docker-entrypoint-initdb.d
+      - ./docker/postgres/test-data:/test-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U v10r_test -d v10r_test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - v10r-test
+
+  # Redis for message queue testing
+  test-redis:
+    image: redis:7-alpine
+    container_name: v10r-test-redis
+    ports:
+      - "16379:6379"  # Use different port to avoid conflicts
+    volumes:
+      - test_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - v10r-test
+
+  # Mock Infinity embedding server
+  mock-infinity:
+    build:
+      context: ./docker/mock-infinity
+      dockerfile: Dockerfile
+    container_name: v10r-mock-infinity
+    ports:
+      - "18080:80"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - v10r-test
+
+  # Test runner container (optional - for CI/CD)
+  test-runner:
+    build:
+      context: .
+      dockerfile: docker/test.Dockerfile
+    container_name: v10r-test-runner
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-infinity:
+        condition: service_healthy
+    environment:
+      # Test database configuration
+      POSTGRES_HOST: test-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: v10r_test
+      POSTGRES_PASSWORD: test_password_123
+      POSTGRES_DB: v10r_test_db
+      
+      # Test Redis configuration
+      REDIS_HOST: test-redis
+      REDIS_PORT: 6379
+      
+      # Mock embedding service
+      INFINITY_ENDPOINT: http://mock-infinity/v1/embeddings
+      OPENAI_API_KEY: test-key-not-used
+      
+      # Test environment flags
+      PYTEST_CURRENT_TEST: "1"
+      V10R_TESTING: "true"
+      V10R_LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app
+      - test_coverage:/app/htmlcov
+    working_dir: /app
+    command: >
+      sh -c "
+        echo 'Waiting for services to be ready...'
+        sleep 10
+        echo 'Running integration tests...'
+        pytest tests/integration -v --tb=short --cov=src/v10r --cov-report=html --cov-report=term
+      "
+    networks:
+      - v10r-test
+    profiles:
+      - testing  # Only start when explicitly requested
+
+volumes:
+  test_postgres_data:
+    driver: local
+  test_redis_data:
+    driver: local
+  test_coverage:
+    driver: local
+
+networks:
+  v10r-test:
+    driver: bridge
+    name: v10r-test-network 

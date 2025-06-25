@@ -1,0 +1,53 @@
+# v10r Simple Configuration Example
+# This demonstrates the minimal setup needed for automatic vectorization
+
+service_name: "v10r-simple"
+debug: false
+
+# Database configuration
+databases:
+  - name: "primary"
+    connection:
+      host: "localhost"
+      port: 5432
+      database: "myapp_db"
+      user: "v10r_user"
+      password: "secure_password"
+    
+    # Tables to vectorize
+    tables:
+      - schema: "public"
+        table: "articles" 
+        text_column: "content"
+        id_column: "id"
+        embedding_config: "infinity_bge_m3"
+
+# Embedding provider configuration
+embeddings:
+  infinity_bge_m3:
+    provider: "infinity"
+    endpoint: "http://localhost:7997"
+    model: "BAAI/bge-m3"
+    dimensions: 1024
+    batch_size: 30
+    timeout: 60
+    max_retries: 3
+    retry_delay: 2.0
+
+# Message queue configuration
+queue:
+  type: "redis"
+  name: "v10r_tasks"
+  connection:
+    host: "localhost"
+    port: 6379
+    db: 0
+  max_retries: 3
+  retry_delay: 60
+
+# Worker configuration
+workers:
+  concurrency: 2
+  batch_timeout: 60
+  max_batch_size: 50
+  heartbeat_interval: 30 
