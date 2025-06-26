@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import BaseModel, Field, ValidationError, validator, ConfigDict
 from pydantic_settings import BaseSettings
 
 from .exceptions import ConfigurationError
@@ -242,10 +242,12 @@ class V10rConfig(BaseSettings):
         default_factory=MonitoringConfig, description="Monitoring configuration"
     )
 
-    class Config:
-        env_file = ".env"
-        env_prefix = "V10R_"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        env_prefix="V10R_",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "V10rConfig":
